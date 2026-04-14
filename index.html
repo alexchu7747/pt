@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Brazuca AI V9.1 - 记忆强化版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <style>
+        :root { --primary: #0b57d0; --bg: #f8f9fa; --surface: #ffffff; --border: #e3e3e3; --radius: 12px; --success: #34a853; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 50; }
+        .logo { font-weight: bold; font-size: 1.5rem; color: var(--primary); margin-bottom: 30px; }
+        .nav-btn { background: none; border: none; text-align: left; padding: 12px; border-radius: 8px; cursor: pointer; color: #444; transition: 0.3s; font-size: 1rem; }
+        .nav-btn:hover, .nav-btn.active { background: #e8f0fe; color: var(--primary); font-weight: bold; }
+
+        .content { flex: 1; padding: 25px; overflow-y: auto; position: relative; padding-bottom: 160px; }
+        .view { display: none; max-width: 1200px; margin: 0 auto; }
+        .view.active { display: block; }
+
+        .card { background: var(--surface); border-radius: var(--radius); padding: 20px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .btn { padding: 10px 20px; border-radius: 20px; border: none; cursor: pointer; font-size: 0.9rem; transition: 0.2s; display: inline-flex; align-items: center; gap: 5px; }
+        .btn-p { background: var(--primary); color: white; }
+        .btn-s { background: white; border: 1px solid var(--border); color: #444; }
+        .btn-danger { background: #fce8e6; color: #d93025; }
+
+        .v-layout { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; height: 60vh; }
+        .v-box { background: #000; border-radius: var(--radius); overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
+        video, #yt-player { width: 100%; height: 100%; object-fit: contain; }
+        .s-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow-y: auto; padding: 15px; }
+        
+        .s-line { padding: 12px; border-radius: 8px; cursor: pointer; border-left: 4px solid transparent; margin-bottom: 5px; transition: 0.2s; }
+        .s-line:hover { background: #f1f3f4; }
+        .s-line.active { background: #e8f0fe; border-left-color: var(--primary); }
+        .zh-txt { font-size: 0.9rem; color: #666; margin-top: 4px; }
+        
+        /* 单词交互样式与词频标记 */
+        .word { cursor: pointer; border-radius: 3px; padding: 0 2px; transition: 0.2s; }
+        .word:hover { background: #d3e3fd; color: var(--primary); }
+        .word.known { border-bottom: 2px solid var(--success); font-weight: 500; color: var(--primary); }
+
+        #bottom-sub-bar {
+            position: fixed; bottom: 0; left: 221px; right: 0;
+            background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(15px);
+            border-top: 1px solid var(--border); padding: 20px 40px; min-height: 110px;
+            z-index: 100; display: none; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; box-shadow: 0 -5px 20px rgba(0,0,0,0.05); cursor: pointer;
+        }
+        #bottom-sub-bar:hover { background: #fcfdfe; }
+
+        .blind-mode .zh-txt, .blind-mode .zh-sub-active { display: none !important; }
+        .blind-mode .s-line:hover .zh-txt, .blind-mode #bottom-sub-bar:hover .zh-sub-active { display: block !important; }
+
+        .r-paragraph { margin-bottom: 25px; line-height: 1.8; }
+        .r-pt-txt { font-size: 1.15rem; color: #222; }
+        .r-zh-txt { font-size: 1rem; color: #666; margin-top: 8px; padding-left: 12px; border-left: 3px solid #ddd; display: block; }
+        .r-blind-mode .r-zh-txt { display: none; }
+        .r-blind-mode .r-paragraph:hover .r-zh-txt { display: block; }
+
+        .drawer { position: fixed; right: -400px; top: 0; width: 380px; height: 100vh; background: #fff; box-shadow: -5px 0 15px rgba(0,0,0,0.1); transition: 0.3s; z-index: 1000; padding: 30px; box-sizing: border-box; overflow-y: auto; }
+        .drawer.open { right: 0; }
+        .input-base { padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <div class="logo">Brazuca V9.1</div>
+        <button class="nav-btn active" onclick="showV('video', this)">🎬 视频精听</button>
+        <button class="nav-btn" onclick="showV('reading', this)">📖 沉浸精读</button>
+        <button class="nav-btn" onclick="showV('corpus', this)">📚 私人语料</button>
+        <button class="nav-btn" onclick="showV('config', this)">⚙️ 系统设置</button>
+    </nav>
+
+    <main class="content">
+        <div id="video" class="view active">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0">视频精听舱</h2>
+                <div id="v-ctrl" style="display:none; gap:10px;">
+                    <button class="btn btn-danger" onclick="resetVideo()">⬅️ 返回</button>
+                    <button class="btn btn-s" id="blind-btn" onclick="toggleBlind()">👁️ 盲听模式</button>
+                </div>
+            </div>
+
+            <div class="card" id="v-init">
+                <div style="display: flex; gap: 10px; margin-bottom: 25px;">
+                    <button class="btn btn-p" id="mode-local" onclick="switchMode('local')">📁 本地文件</button>
+                    <button class="btn btn-s" id="mode-yt" onclick="switchMode('yt')">📺 YouTube 链接</button>
+                </div>
+                <div id="setup-local">
+                    <p><b>1. 选择本地视频</b></p>
+                    <input type="file" id="vf" accept="video/*" style="margin-bottom:20px">
+                </div>
+                <div id="setup-yt" style="display:none">
+                    <p><b>1. YouTube 链接</b></p>
+                    <input type="text" class="input-base" id="yt-url" style="width:100%; margin-bottom:20px" placeholder="https://www.youtube.com/watch?v=...">
+                </div>
+                <p><b>2. 导入字幕</b></p>
+                <div style="display:flex; gap:10px; align-items: center; margin-bottom:15px">
+                    <input type="file" id="sf" accept=".srt" style="flex:1">
+                    <span>或</span>
+                    <button class="btn btn-s" onclick="document.getElementById('p-wrap').style.display='block'">✍️ 粘贴转录</button>
+                </div>
+                <div id="p-wrap" style="display:none;">
+                    <textarea class="input-base" id="sub-raw" style="width:100%; height:120px; font-family:monospace;" placeholder="粘贴带时间戳的内容..."></textarea>
+                </div>
+                <button class="btn btn-p" style="margin-top:25px; width:100%;" onclick="startVideo()">进入精听工作区 ➔</button>
+            </div>
+
+            <div class="v-layout" id="v-main" style="display:none">
+                <div class="v-box" id="player-container">
+                    <video id="player" controls style="display:block"></video>
+                    <div id="yt-player" style="display:none"></div>
+                </div>
+                <div class="s-box" id="s-list"></div>
+            </div>
+        </div>
+
+        <div id="bottom-sub-bar" title="点击回到本句开头"></div>
+
+        <div id="reading" class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0">沉浸精读台</h2>
+                <div id="r-ctrl" style="display:none; gap:10px;">
+                    <button class="btn btn-danger" onclick="resetReading()">⬅️ 返回重选</button>
+                    <button class="btn btn-s" id="r-blind-btn" onclick="toggleRBlind()">👁️ 隐藏全文译文</button>
+                </div>
+            </div>
+            <div class="card" id="r-init">
+                <textarea class="input-base" id="r-text" rows="14" style="width:100%; font-size:1.05rem;" placeholder="在此粘贴需要精读的巴葡文章..."></textarea>
+                <button class="btn btn-p" style="margin-top:15px; width:100%; padding:15px; font-size:1.1rem;" onclick="startReading()">🚀 开始全文解析与翻译</button>
+            </div>
+            <div id="r-main" class="card" style="display:none; padding:30px;"></div>
+        </div>
+
+        <div id="corpus" class="view">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0">私人语料库</h2>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-s" onclick="exportData()">📤 导出备份</button>
+                    <button class="btn btn-s" onclick="document.getElementById('import-file').click()">📥 导入</button>
+                    <input type="file" id="import-file" style="display:none" onchange="importData(this)">
+                    <button class="btn btn-s" onclick="document.getElementById('c-add-box').style.display='block'">➕ 手动添加</button>
+                    <button class="btn btn-p" onclick="startStudy()">🧠 记忆复习</button>
+                </div>
+            </div>
+            <div class="card" id="c-add-box" style="display:none; background:#f0f4f9;">
+                <h4 style="margin-top:0; color:var(--primary);">添加新语料</h4>
+                <div style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+                    <input type="text" class="input-base" id="c-add-w" placeholder="单词/短语" style="flex:1;">
+                    <input type="text" class="input-base" id="c-add-m" placeholder="中文释义" style="flex:1;">
+                </div>
+                <textarea class="input-base" id="c-add-ctx" placeholder="原句/上下文" style="width:100%; height:60px; margin-bottom:10px;"></textarea>
+                <button class="btn btn-p" onclick="manualAddCorpus()">保存</button>
+                <button class="btn btn-s" onclick="document.getElementById('c-add-box').style.display='none'">取消</button>
+            </div>
+            <div id="c-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:15px;"></div>
+        </div>
+
+        <div id="study-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2000; justify-content:center; align-items:center;">
+            <div class="card" style="width:600px; max-width:90%; text-align:center; padding:40px;">
+                <button class="btn btn-danger" style="position:absolute; top:15px; right:15px;" onclick="document.getElementById('study-modal').style.display='none'">退出</button>
+                <h3 id="study-w" style="font-size:2.5rem; color:var(--primary); margin-bottom:15px;"></h3>
+                <p id="study-ctx" style="font-size:1.1rem; color:#555; font-style:italic; margin-bottom:30px;"></p>
+                <div id="study-ans" style="display:none; background:#f8f9fa; padding:20px; border-radius:8px; margin-bottom:30px; border:1px solid #eee;">
+                    <p id="study-m" style="font-size:1.4rem; font-weight:bold; color:#333;"></p>
+                    <p id="study-ext" style="font-size:0.95rem; color:#666;"></p>
+                </div>
+                <button class="btn btn-p" id="study-show-btn" style="width:200px;" onclick="showAnswer()">翻开卡片</button>
+                <button class="btn btn-s" id="study-next-btn" style="display:none; width:200px;" onclick="nextStudy()">下一个 ➔</button>
+            </div>
+        </div>
+
+        <div id="config" class="view">
+            <h2>设置</h2>
+            <div class="card">
+                <p>Gemini API Key</p>
+                <input type="password" class="input-base" id="key-in" style="width:100%;">
+                <button class="btn btn-p" style="margin-top:20px" onclick="saveKey()">保存配置</button>
+            </div>
+        </div>
+    </main>
+
+    <div class="drawer" id="dr">
+        <h3 id="dr-t" style="color:var(--primary); margin-top:0;"></h3>
+        <div id="dr-c" style="line-height:1.7;"></div>
+        <button id="dr-s" class="btn btn-p" style="display:none; width:100%; margin-top:20px" onclick="saveToDb()">💾 存入语料库</button>
+        <button class="btn btn-s" style="width:100%; margin-top:10px" onclick="closeDr()">关闭</button>
+    </div>
+
+    <script>
+        let state = {
+            key: localStorage.getItem('bz_key') || '',
+            db: JSON.parse(localStorage.getItem('bz_db') || '[]'),
+            subs: [], mode: 'local', ytPlayer: null, syncTimer: null, blind: false, rBlind: false, cur: null
+        };
+
+        function showV(id, btn) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            if(btn) btn.classList.add('active');
+            document.getElementById('bottom-sub-bar').style.display = (id==='video' && document.getElementById('v-main').style.display === 'grid') ? 'flex':'none';
+            if(id === 'corpus') renderCorpus();
+        }
+
+        function saveKey() { state.key = document.getElementById('key-in').value.trim(); localStorage.setItem('bz_key', state.key); alert('配置已保存！'); }
+
+        // ================== 核心：词频标记与单词处理 ==================
+        function fmtW(t) {
+            return t.split(/([\s,.;?!]+)/).map(w => {
+                if(/[\s,.;?!]+/.test(w) || !w) return w;
+                // 检查是否在语料库中（已掌握/重点词）
+                const isKnown = state.db.some(item => item.word.toLowerCase() === w.toLowerCase());
+                const className = isKnown ? 'word known' : 'word';
+                return `<span class="${className}" onclick="askAI('${w.replace(/'/g,"\\'")}', \`${t.replace(/`/g,"\\`")}\`)">${w}</span>`;
+            }).join('');
+        }
+
+        // ================== 视频模块优化 ==================
+        async function startVideo() {
+            const sFile = document.getElementById('sf').files[0];
+            const sRaw = document.getElementById('sub-raw').value.trim();
+            if(!sFile && !sRaw) return alert('请提供字幕');
+            if(sRaw) parseSmart(sRaw); else { const t = await sFile.text(); parseSRT(t); }
+            renderSubs();
+            if(state.mode === 'local') {
+                const f = document.getElementById('vf').files[0];
+                if(!f) return alert('请选择本地视频');
+                document.getElementById('player').src = URL.createObjectURL(f);
+                document.getElementById('player').style.display = 'block';
+                document.getElementById('yt-player').style.display = 'none';
+                document.getElementById('player').ontimeupdate = () => sync(document.getElementById('player').currentTime);
+            } else {
+                const url = document.getElementById('yt-url').value;
+                const vid = extractYtId(url);
+                if(!vid) return alert('无效链接');
+                initYT(vid);
+                document.getElementById('player').style.display = 'none';
+                document.getElementById('yt-player').style.display = 'block';
+            }
+            document.getElementById('v-init').style.display = 'none';
+            document.getElementById('v-main').style.display = 'grid';
+            document.getElementById('v-ctrl').style.display = 'flex';
+            document.getElementById('bottom-sub-bar').style.display = 'flex';
+        }
+
+        function sync(t) {
+            const idx = state.subs.findIndex(s => t >= s.start && t <= s.end);
+            if(idx !== lastIdx) {
+                document.querySelectorAll('.s-line').forEach(l => l.classList.remove('active'));
+                const bar = document.getElementById('bottom-sub-bar');
+                if(idx !== -1) {
+                    const s = state.subs[idx];
+                    document.getElementById(`s-${idx}`).classList.add('active');
+                    document.getElementById(`s-${idx}`).scrollIntoView({ behavior:'smooth', block:'center'});
+                    // 底部字幕点击重播本句
+                    bar.innerHTML = `<div onclick="event.stopPropagation(); jump(${s.start})" style="width:100%">
+                        <div style="font-size:1.7rem; color:var(--primary); font-weight:bold; margin-bottom:5px;">${fmtW(s.pt)}</div>
+                        <div class="zh-sub-active" style="font-size:1.1rem; color:#666;">${s.zh}</div>
+                    </div>`;
+                    bar.onclick = () => jump(s.start);
+                } else bar.innerHTML = '';
+                lastIdx = idx;
+            }
+        }
+
+        // ================== 数据导出导入 ==================
+        function exportData() {
+            const data = { db: state.db, config: { key: state.key }, date: new Date().toISOString() };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Brazuca_Backup_${new Date().toLocaleDateString()}.json`;
+            a.click();
+        }
+
+        function importData(input) {
+            const file = input.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if(data.db && confirm(`导入 ${data.db.length} 条语料？`)) {
+                        state.db = data.db;
+                        localStorage.setItem('bz_db', JSON.stringify(state.db));
+                        renderCorpus();
+                        alert('导入成功');
+                    }
+                } catch(err) { alert('文件无效'); }
+            };
+            reader.readAsText(file);
+        }
+
+        // ================== 基础功能函数 (保持 V9 逻辑) ==================
+        function switchMode(m) {
+            state.mode = m;
+            document.getElementById('mode-local').className = m === 'local' ? 'btn btn-p' : 'btn btn-s';
+            document.getElementById('mode-yt').className = m === 'yt' ? 'btn btn-p' : 'btn btn-s';
+            document.getElementById('setup-local').style.display = m === 'local' ? 'block' : 'none';
+            document.getElementById('setup-yt').style.display = m === 'yt' ? 'block' : 'none';
+        }
+
+        function resetVideo() {
+            if(state.syncTimer) clearInterval(state.syncTimer);
+            if(state.mode==='local') document.getElementById('player').pause();
+            else if(state.ytPlayer) state.ytPlayer.pauseVideo();
+            document.getElementById('v-main').style.display = 'none';
+            document.getElementById('v-ctrl').style.display = 'none';
+            document.getElementById('bottom-sub-bar').style.display = 'none';
+            document.getElementById('v-init').style.display = 'block';
+        }
+
+        function parseSmart(text) {
+            state.subs = [];
+            const tsRegex = /(?:\(|\[)?(\d{1,2}:)?(\d{1,2}):(\d{2})(?:\)|\])?/g;
+            const lines = text.split('\n').filter(l => l.trim());
+            lines.forEach(line => {
+                let match; const matches = []; tsRegex.lastIndex = 0;
+                while ((match = tsRegex.exec(line)) !== null) { matches.push({ t: match[0], idx: match.index, sec: toS(match[0].replace(/[()\[\]]/g, '')) }); }
+                matches.forEach((m, i) => {
+                    const start = m.sec;
+                    const contentEnd = (i < matches.length - 1) ? matches[i+1].idx : line.length;
+                    const content = line.substring(m.idx + m.t.length, contentEnd).replace(/^[:\s>-]+/, '').trim();
+                    if(content) state.subs.push({ start, end: start+4, pt: content, zh: '' });
+                });
+            });
+            state.subs.sort((a,b) => a.start - b.start);
+            for(let i=0; i<state.subs.length-1; i++) state.subs[i].end = state.subs[i+1].start;
+        }
+
+        function extractYtId(u) { const rx = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/; const m = u.match(rx); return (m && m[2].length === 11) ? m[2] : null; }
+        function initYT(id) {
+            if(state.ytPlayer) { state.ytPlayer.loadVideoById(id); }
+            else { state.ytPlayer = new YT.Player('yt-player', { videoId: id, playerVars: {autoplay:1, controls:1, origin: window.location.origin}, events: { onReady: () => { if(state.syncTimer) clearInterval(state.syncTimer); state.syncTimer = setInterval(() => sync(state.ytPlayer.getCurrentTime()), 500); }} }); }
+        }
+        function parseSRT(raw) {
+            state.subs = []; const blocks = raw.replace(/\r\n/g, '\n').split(/\n\s*\n/);
+            blocks.forEach(b => {
+                const lines = b.split('\n').filter(l => l.trim());
+                const tIdx = lines.findIndex(l => l.includes('-->'));
+                if(tIdx !== -1) {
+                    const times = lines[tIdx].split('-->'); const txtLines = lines.slice(tIdx + 1);
+                    let pt=[], zh=[]; txtLines.forEach(l => { if(/[\u4e00-\u9fa5]/.test(l)) zh.push(l); else pt.push(l); });
+                    state.subs.push({ start: toS(times[0]), end: toS(times[1]), pt: pt.join(' '), zh: zh.join(' ') });
+                }
+            });
+        }
+        function toS(t) { const p = t.trim().replace(',','.').split(':'); return p.length===3 ? p[0]*3600+p[1]*60+p[2]*1 : p[0]*60+p[1]*1; }
+        function renderSubs() { document.getElementById('s-list').innerHTML = state.subs.map((s, i) => `<div class="s-line" id="s-${i}" onclick="jump(${s.start})"><div style="font-weight:500;">${fmtW(s.pt)}</div><div class="zh-txt">${s.zh}</div></div>`).join(''); }
+        function jump(t) { if(state.mode==='local') { document.getElementById('player').currentTime=t; document.getElementById('player').play(); } else { state.ytPlayer.seekTo(t, true); state.ytPlayer.playVideo(); } }
+        let lastIdx = -1;
+        function toggleBlind() { state.blind = !state.blind; document.getElementById('v-main').classList.toggle('blind-mode', state.blind); document.getElementById('bottom-sub-bar').classList.toggle('blind-mode', state.blind); document.getElementById('blind-btn').innerText = state.blind ? '显示译文' : '盲听模式'; }
+
+        // ================== 精读模块 ==================
+        async function startReading() {
+            const txt = document.getElementById('r-text').value.trim(); if(!txt) return alert('请粘贴文章');
+            if(!state.key) return alert('请配置 API Key');
+            document.getElementById('r-init').style.display = 'none'; 
+            document.getElementById('r-main').style.display = 'block';
+            document.getElementById('r-ctrl').style.display = 'flex';
+            document.getElementById('r-main').innerHTML = `<h3>🚀 AI 解析中...</h3>`;
+            const paragraphs = txt.split('\n').filter(l => l.trim());
+            try {
+                const prompt = `将以下巴葡翻译成中文。保持段落一一对应：\n${txt}`;
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.key}`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({contents: [{parts: [{text: prompt}]}]})
+                });
+                const data = await res.json();
+                const zhParagraphs = data.candidates[0].content.parts[0].text.trim().split('\n').filter(l => l.trim());
+                document.getElementById('r-main').innerHTML = paragraphs.map((p, i) => `<div class="r-paragraph"><div class="r-pt-txt">${fmtW(p)}</div><div class="r-zh-txt">${zhParagraphs[i] || ''}</div></div>`).join('');
+            } catch (e) { document.getElementById('r-main').innerHTML = `翻译失败: ${e.message}`; }
+        }
+        function resetReading() { document.getElementById('r-main').style.display='none'; document.getElementById('r-ctrl').style.display='none'; document.getElementById('r-init').style.display='block'; }
+        function toggleRBlind() { state.rBlind = !state.rBlind; document.getElementById('r-main').classList.toggle('r-blind-mode', state.rBlind); document.getElementById('r-blind-btn').innerText = state.rBlind ? '显示译文' : '隐藏译文'; }
+
+        // ================== AI 与 语料库 ==================
+        async function askAI(w, ctx) {
+            event.stopPropagation();
+            if(state.mode==='local') document.getElementById('player').pause(); else if(state.ytPlayer) state.ytPlayer.pauseVideo();
+            if(!state.key) return alert('请配置 Key');
+            openDr(w);
+            try {
+                const prompt = `分析单词"${w}"在上下文"${ctx}"中的意思。只返回JSON:{"mean":"释义","gram":"词性","ext":"用法建议"}`;
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.key}`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({contents: [{parts: [{text: prompt}]}]})
+                });
+                const data = await res.json();
+                const json = JSON.parse(data.candidates[0].content.parts[0].text.replace(/```json|```/g, ''));
+                state.cur = { word: w, context: ctx, ...json };
+                document.getElementById('dr-c').innerHTML = `<p><b>释义：</b>${json.mean}</p><p><b>语法：</b>${json.gram}</p><div style="background:#f8f9fa;padding:15px;border-radius:8px;">${json.ext}</div>`;
+                document.getElementById('dr-s').style.display = 'block';
+                document.getElementById('dr-s').innerText = '💾 存入语料库';
+            } catch(e) { document.getElementById('dr-c').innerHTML = `解析失败`; }
+        }
+
+        function openDr(t) { document.getElementById('dr-t').innerText=t; document.getElementById('dr-c').innerText='✨ AI 解析中...'; document.getElementById('dr-s').style.display='none'; document.getElementById('dr').classList.add('open'); }
+        function closeDr() { document.getElementById('dr').classList.remove('open'); }
+        function saveToDb() { 
+            state.db.unshift(state.cur); 
+            localStorage.setItem('bz_db', JSON.stringify(state.db)); 
+            document.getElementById('dr-s').innerText='✅ 已存入'; 
+            setTimeout(() => { closeDr(); renderSubs(); if(document.getElementById('reading').classList.contains('active')) startReading(); }, 600); 
+        }
+
+        function renderCorpus() {
+            document.getElementById('c-list').innerHTML = state.db.map((i, idx) => `
+                <div class="card" style="position:relative;">
+                    <button style="position:absolute; top:10px; right:10px; border:none; background:none; cursor:pointer;" onclick="delCorpus(${idx})">🗑️</button>
+                    <h3 style="margin:0;color:var(--primary);">${i.word}</h3>
+                    <p><b>${i.mean}</b> <small>${i.gram||''}</small></p>
+                    <small style="color:#666; display:block; background:#f9f9f9; padding:8px; border-left:3px solid #ddd;">${i.context}</small>
+                </div>`).join('');
+        }
+        function delCorpus(idx) { if(confirm('删除吗？')) { state.db.splice(idx, 1); localStorage.setItem('bz_db', JSON.stringify(state.db)); renderCorpus(); } }
+        function manualAddCorpus() {
+            const w = document.getElementById('c-add-w').value.trim();
+            const m = document.getElementById('c-add-m').value.trim();
+            if(!w || !m) return;
+            state.db.unshift({ word: w, mean: m, context: document.getElementById('c-add-ctx').value, gram: '手动' });
+            localStorage.setItem('bz_db', JSON.stringify(state.db));
+            renderCorpus();
+            document.getElementById('c-add-box').style.display='none';
+        }
+
+        // 复习系统
+        let studyQueue = [];
+        let currentStudyItem = null;
+        function startStudy() {
+            if(state.db.length===0) return;
+            studyQueue = [...state.db].sort(() => Math.random()-0.5);
+            document.getElementById('study-modal').style.display='flex';
+            nextStudy();
+        }
+        function nextStudy() {
+            if(studyQueue.length===0) { alert('复习完成！'); return document.getElementById('study-modal').style.display='none'; }
+            currentStudyItem = studyQueue.pop();
+            document.getElementById('study-w').innerText = currentStudyItem.word;
+            document.getElementById('study-ctx').innerText = currentStudyItem.context ? `"${currentStudyItem.context}"` : '';
+            document.getElementById('study-ans').style.display='none';
+            document.getElementById('study-show-btn').style.display='inline-block';
+            document.getElementById('study-next-btn').style.display='none';
+        }
+        function showAnswer() {
+            document.getElementById('study-m').innerText = currentStudyItem.mean;
+            document.getElementById('study-ext').innerText = currentStudyItem.ext || '';
+            document.getElementById('study-ans').style.display='block';
+            document.getElementById('study-show-btn').style.display='none';
+            document.getElementById('study-next-btn').style.display='inline-block';
+        }
+    </script>
+</body>
+</html>
